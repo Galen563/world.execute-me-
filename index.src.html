@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>world.execute(me); — 实时网页动画 MV</title>
+<!--
+  ============================================================================
+  world.execute(me);  —  a realtime web animation
+  ============================================================================
+  双击这个文件即可播放。不需要服务器、不需要构建、不联网。
+
+  全片只有一个时间来源：audio.currentTime。
+  t = audio.currentTime + syncOffset
+  每一帧都是 t 的纯函数 —— 没有帧计数、没有跨帧状态、没有 Math.random()。
+  暂停、继续、任意拖动进度条之后，画面都能精确复原。
+
+  音频文件需要与本文件同级。页面会依次尝试几个常见文件名：
+
+      Mili - world.execute (me) ;.mp3      ← 首选
+      Mili - world.execute(me) ;.mp3
+      Mili - world.execute (me);.mp3
+      Mili - world.execute(me);.mp3
+      world.execute (me) ;.mp3
+      audio.mp3
+
+  注意原始文件名里有两个极易被重命名吃掉的空格。
+
+  快捷键
+   空格        播放 / 暂停
+   ← →        后退 / 前进 5 秒     (按住 Shift = 1 秒)
+   , .        同步偏移 -/+ 10 毫秒 (按住 Shift = 1 毫秒)
+   /          同步偏移归零
+   R          从头重播
+   F          全屏
+   H          隐藏界面
+   D          调试叠层
+   ↑ ↓        音量
+   Home End   跳到开头 / 结尾
+
+  ============================================================================
+  这个 <script type="text/plain"> 块由 _build/embed-lrc.js 从
+  assets/lrc-embed.txt 逐字节注入，而 assets/timeline.js 是同一个源文件
+  生成的另一份拷贝。两份独立存在本身就是校验：src/50_selftest.js 每次加载
+  都会比对它们，任何一处被改动都会立刻报出来。
+  ============================================================================
+-->
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+
+<div id="shell">
+
+  <!-- 整部片子画在这里 -->
+  <div id="stage">
+    <canvas id="view" width="1600" height="900"></canvas>
+    <video id="video" playsinline preload="auto" muted></video>
+    <!-- 注意：这里没有 crossorigin 属性，而且是故意不加的。
+         file:// 下页面是 opaque origin，本地文件永远不可能返回
+         Access-Control-Allow-Origin，于是 Chrome 会判定
+         MEDIA_ERR_SRC_NOT_SUPPORTED (code 4) —— 文件明明能读，却完全没有声音。
+         本作品不读回媒体像素，所以不需要这个属性。 -->
+    <audio id="audio" preload="auto"></audio>
+
+    <div id="boot-msg"></div>
+
+    <div id="start-hint">
+      <span class="ring"></span>
+      <span class="txt">点击开始</span>
+      <span class="sub">空格 播放/暂停 &nbsp;·&nbsp; ← → 快进快退 &nbsp;·&nbsp; , . 毫秒同步偏移 &nbsp;·&nbsp; F 全屏 &nbsp;·&nbsp; D 调试</span>
+    </div>
+
+    <div id="toast-host"></div>
+  </div>
+
+  <!-- HUD ------------------------------------------------------------------ -->
+  <header id="hud-top">
+    <div class="brand">
+      <span class="sig">world.execute(me);</span>
+      <span class="sep">/</span>
+      <span class="sub">Mili &middot; Miracle Milk</span>
+    </div>
+    <div class="right">
+      <span id="state" data-s="READY">READY</span>
+      <span class="sep">/</span>
+      <span id="clock" class="mono">0:00.000</span>
+    </div>
+  </header>
+
+  <!-- 歌词面板：只留当前这一句。
+       刻意删掉了行号/重复次数、时间戳和 "next" 预告——它们让画面底部一直挂着
+       三行小字，而且把观众的注意力从画面拉到阅读上。
+       现在这里只有一句正在唱的词，唱完就换。 -->
+  <div id="panel">
+    <div id="lyric-line">(pre-roll)</div>
+  </div>
+
+  <!-- 传输控件。底部栏是半透明的，浮在画面之上而不是切成一条黑带，
+       这样片子看起来是一整块，而不是"视频加播放器"。
+       刻意没有同步偏移滑杆：毫秒偏移是按键功能（, . /），
+       放在界面上只会占地方。 -->
+  <footer id="ctrl">
+    <div id="wave" role="slider" aria-label="播放进度" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="wave-buf"></div>
+      <div id="wave-fill"></div>
+      <div id="marks"></div>
+      <div id="wave-head"></div>
+    </div>
+
+    <div class="row">
+      <div class="grp">
+        <button id="btn-play" class="btn icon" aria-label="播放">
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l12 7-12 7z"/></svg>
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        </button>
+        <button id="btn-replay" class="btn icon" aria-label="从头重播">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+        </button>
+        <div class="time"><span id="t-cur">0:00.000</span><span class="slash">/</span><span id="t-tot">3:31.984</span></div>
+      </div>
+
+      <div class="grp grow">
+        <label class="lbl" for="vol">音量</label>
+        <input id="vol" class="range" type="range" min="0" max="1" step="0.01" value="0.85" aria-label="音量">
+        <span id="vol-val" class="mono">85%</span>
+      </div>
+
+      <div class="grp">
+        <button id="btn-full" class="btn icon" aria-label="全屏">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5v2H6v3zM15 4h5v5h-2V6h-3zM4 15h2v3h3v2H4zM18 15h2v5h-5v-2h3z"/></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- ==========================================================================
+     歌词与时间轴，内嵌。运行时不做任何抓取。
+     这段内容由 _build/embed-lrc.js 从原始 .lrc 派生，与 assets/timeline.js
+     是同源的两份独立拷贝，加载时互相校验。
+     ========================================================================== -->
+<script id="lrc-source" type="text/plain">
+<!--LRC-EMBED-->
+</script>
+
+<!-- 引擎：按顺序加载的经典脚本。刻意不用 ES module，
+     因为 file:// 下 module 会被 CORS 拦住，页面将完全打不开。 -->
+<script src="assets/onsets.js"></script>
+<script src="assets/waveform.js"></script>
+<script src="assets/timeline.js"></script>
+<script src="src/00_core.js"></script>
+<script src="src/01_world.js"></script>
+<script src="src/10_draw.js"></script>
+<script src="src/15_sceneapi.js"></script>
+<script src="src/20_lyrics.js"></script>
+<script src="src/30_world.js"></script>
+<script src="src/32_annotate.js"></script>
+<script src="src/35_motifs.js"></script>
+<script src="src/40_plates_boot.js"></script>
+<script src="src/41_plates_theorem.js"></script>
+<script src="src/42_plates_condition.js"></script>
+<script src="src/43_plates_flesh.js"></script>
+<script src="src/44_plates_absence.js"></script>
+<script src="src/45_plates_execution.js"></script>
+<script src="src/46_plates_love.js"></script>
+<script src="src/50_selftest.js"></script>
+<script src="src/60_app.js"></script>
+</body>
+</html>

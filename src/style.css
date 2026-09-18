@@ -1,0 +1,478 @@
+/* ============================================================================
+   src/style.css — the interface.
+
+   The chrome is deliberately thin and dark so the film is the brightest thing
+   on screen. Everything here uses the same palette the animation does, so the
+   controls read as part of the same instrument rather than a video player
+   bolted onto it.
+
+   Colour vocabulary
+     --void   near-black ground the canvas sits on
+     --deep   panel fill
+     --line   the hairline grid colour
+     --cyan   the machine's resting state
+     --warn   amber, used while it strains
+     --red    alarm, used only in the last minute
+   ==========================================================================*/
+
+:root {
+  --void: #03050a;
+  --deep: #070c14;
+  --panel: #0b1119;
+  --line: #1b2c3c;
+  --line-hi: #2c4a60;
+  --cyan: #56d6e8;
+  --cyan-dim: #2b7f8e;
+  --white: #dceaf2;
+  --dim: #6b8598;
+  --warn: #f6b03e;
+  --red: #e83e36;
+  --mono: "Cascadia Mono", "Consolas", "SFMono-Regular", "DejaVu Sans Mono",
+          "Liberation Mono", Menlo, monospace;
+  --sans: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--void);
+  color: var(--white);
+  font-family: var(--mono);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.hide-ui #hud-top,
+body.hide-ui #panel,
+body.hide-ui #ctrl { opacity: 0; pointer-events: none; }
+
+#shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==========================================================================
+   STAGE
+   ======================================================================== */
+#stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #000;
+  overflow: hidden;
+  cursor: default;
+}
+
+#view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.28;
+  display: none;
+  pointer-events: none;
+}
+body.use-video #video { display: block; }
+
+/* ==========================================================================
+   TOP HUD
+   ======================================================================== */
+#hud-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  font-size: 11.5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--dim);
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 0.35s ease;
+  background: linear-gradient(180deg, rgba(3,5,10,0.72), rgba(3,5,10,0));
+}
+
+#hud-top .brand { display: flex; align-items: baseline; gap: 8px; }
+#hud-top .sig { color: var(--cyan); letter-spacing: 0.14em; }
+#hud-top .sep { color: var(--line-hi); }
+#hud-top .sub { color: var(--dim); letter-spacing: 0.08em; }
+#hud-top .right { display: flex; align-items: baseline; gap: 10px; }
+
+#state {
+  padding: 2px 8px;
+  border: 1px solid var(--line-hi);
+  border-radius: 2px;
+  color: var(--cyan-dim);
+  min-width: 68px;
+  text-align: center;
+}
+#state[data-s="PLAYING"] { color: var(--cyan); border-color: var(--cyan-dim); }
+#state[data-s="PAUSED"]  { color: var(--warn); border-color: #6b4d16; }
+#state[data-s="ENDED"]   { color: var(--dim); }
+#state[data-s="NO AUDIO"]{ color: var(--red); border-color: #7a201a; }
+
+#clock { color: var(--white); font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   LYRIC PANEL — one line, nothing else.
+
+   The index, the repeat counter, the timestamp and the "next" preview were all
+   removed. They were three rows of small type sitting over the bottom of every
+   frame, and small type at the edge of a dark picture is where the eye goes
+   first — so the film competed with its own annotation. What remains is the
+   line being sung, centred, with nothing beside it.
+   ======================================================================== */
+#panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 118px;
+  padding: 0 20px;
+  pointer-events: none;
+  z-index: 18;
+  transition: opacity 0.35s ease;
+  text-align: center;
+}
+
+#lyric-line {
+  font-family: var(--sans);
+  font-size: clamp(17px, 2.5vw, 31px);
+  font-weight: 600;
+  color: var(--white);
+  text-shadow: 0 2px 22px rgba(3, 5, 10, 0.95), 0 0 2px rgba(3, 5, 10, 1);
+  min-height: 1.25em;
+  letter-spacing: 0.005em;
+}
+#lyric-line.instrumental {
+  color: var(--cyan-dim);
+  font-family: var(--mono);
+  font-size: clamp(13px, 1.5vw, 18px);
+  letter-spacing: 0.16em;
+}
+/* an empty line must not reserve height and push the layout around */
+#lyric-line:empty { display: none; }
+
+/* ==========================================================================
+   TRANSPORT
+   --------------------------------------------------------------------------
+   The bar is TRANSLUCENT and floats over the picture rather than being a solid
+   black band under it. A hard-edged strip at the bottom turns the page into
+   "video plus a player"; letting the film run underneath keeps it one object.
+   It also means the frames closest to the bottom edge are still part of the
+   composition instead of being cropped away by chrome.
+   ======================================================================== */
+#ctrl {
+  flex: 0 0 auto;
+  position: relative;
+  background: linear-gradient(180deg,
+              rgba(3, 5, 10, 0) 0%,
+              rgba(3, 5, 10, 0.42) 34%,
+              rgba(3, 5, 10, 0.58) 100%);
+  border-top: 1px solid rgba(44, 74, 96, 0.28);
+  padding: 12px 22px 14px;
+  z-index: 22;
+  transition: opacity 0.35s ease;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+/* a single hairline is all the separation this needs */
+#ctrl::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: 22px; right: 22px;
+  height: 1px;
+  background: linear-gradient(90deg,
+              rgba(86, 214, 232, 0) 0%,
+              rgba(86, 214, 232, 0.22) 30%,
+              rgba(86, 214, 232, 0.22) 70%,
+              rgba(86, 214, 232, 0) 100%);
+}
+
+/* ---- seek bar with the real waveform of the song ------------------------
+   Deliberately quiet: a thin strip of the song's own energy envelope with the
+   lyric marks on it. It is a read-out, not a hero control, so it carries no
+   border and no fill colour of its own until you touch it. */
+#wave {
+  position: relative;
+  height: 26px;
+  margin-bottom: 9px;
+  cursor: pointer;
+  overflow: hidden;
+  touch-action: none;
+  opacity: 0.62;
+  transition: opacity 0.22s ease, height 0.22s ease;
+}
+#wave:hover, #wave:focus-visible, #wave.dragging {
+  opacity: 1;
+  height: 34px;
+}
+#wave:focus-visible { outline: 1px solid rgba(86, 214, 232, 0.5); outline-offset: 3px; }
+
+#wave-buf, #wave-fill {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#wave-buf {
+  opacity: 0.34;
+  background-repeat: repeat-x;
+  background-position: left center;
+}
+#wave-fill {
+  opacity: 0.78;
+  background-repeat: repeat-x;
+  background-position: left center;
+}
+
+#marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#marks i {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 4px;
+  background: var(--cyan-dim);
+  opacity: 0.45;
+}
+#marks i.big { height: 7px; background: var(--cyan); opacity: 0.7; }
+
+#wave-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(86, 214, 232, 0.85);
+  box-shadow: 0 0 6px rgba(86, 214, 232, 0.7);
+  pointer-events: none;
+}
+
+/* ---- control row -------------------------------------------------------- */
+#ctrl .row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+#ctrl .grp { display: flex; align-items: center; gap: 9px; }
+#ctrl .grp.grow { flex: 1 1 190px; min-width: 150px; }
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line-hi);
+  background: var(--panel);
+  color: var(--white);
+  height: 32px;
+  min-width: 34px;
+  padding: 0 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.btn:hover { border-color: var(--cyan-dim); color: var(--cyan); background: #0e1720; }
+.btn:active { background: #131f2b; }
+.btn:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
+.btn.icon svg { width: 15px; height: 15px; fill: currentColor; display: block; }
+.btn.tiny { height: 24px; min-width: 26px; padding: 0 6px; font-size: 10px; }
+
+#btn-play .i-pause { display: none; }
+#btn-play.is-playing .i-play { display: none; }
+#btn-play.is-playing .i-pause { display: block; }
+
+.time {
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.time .slash { color: var(--line-hi); margin: 0 5px; }
+#t-cur { color: var(--white); }
+
+label.lbl {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* the keyboard hint that replaced the sync-offset slider: the function is not
+   given permanent furniture, it is just documented */
+.keys {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(107, 133, 152, 0.72);
+  white-space: nowrap;
+}
+.keys b {
+  font-weight: 600;
+  color: rgba(86, 214, 232, 0.85);
+}
+
+input.range {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 26px;
+  background: transparent;
+  cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 70px;
+}
+input.range::-webkit-slider-runnable-track {
+  height: 2px; background: var(--line-hi); border: none;
+}
+input.range::-moz-range-track { height: 2px; background: var(--line-hi); }
+input.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 16px;
+  margin-top: -7px;
+  background: var(--cyan);
+  border: none;
+  border-radius: 1px;
+}
+input.range::-moz-range-thumb {
+  width: 10px; height: 16px; background: var(--cyan); border: none; border-radius: 1px;
+}
+input.range:focus-visible { outline: 1px solid var(--cyan); outline-offset: 3px; }
+
+.mono { font-variant-numeric: tabular-nums; }
+#vol-val, #off-val {
+  font-size: 11px;
+  color: var(--dim);
+  min-width: 52px;
+  text-align: right;
+}
+
+/* ==========================================================================
+   START HINT, BOOT MESSAGE, TOASTS
+   ======================================================================== */
+#start-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(3, 5, 10, 0.86);
+  z-index: 30;
+  cursor: pointer;
+  text-align: center;
+  padding: 24px;
+}
+#start-hint.gone { display: none; }
+#start-hint .ring {
+  width: 58px; height: 58px;
+  border: 1px solid var(--cyan-dim);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 2.4s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#start-hint .txt {
+  font-size: 15px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+#start-hint .sub {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  max-width: 620px;
+  line-height: 1.9;
+}
+
+#boot-msg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 82%;
+  padding: 18px 22px;
+  background: rgba(3, 5, 10, 0.94);
+  border: 1px solid var(--line-hi);
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  z-index: 40;
+  display: none;
+  text-align: left;
+}
+#boot-msg.show { display: block; }
+#boot-msg.fatal { border-color: #7a201a; color: #ff8a80; }
+
+#toast-host {
+  position: absolute;
+  left: 50%;
+  bottom: 176px;
+  transform: translateX(-50%);
+  z-index: 35;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+#toast-host .toast {
+  padding: 6px 12px;
+  background: rgba(7, 12, 20, 0.94);
+  border: 1px solid var(--line-hi);
+  color: var(--cyan);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  border-radius: 2px;
+  animation: pop 0.22s ease-out;
+}
+@keyframes pop {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ==========================================================================
+   NARROW WINDOWS
+   ======================================================================== */
+@media (max-width: 760px) {
+  #hud-top { font-size: 10px; padding: 8px 12px; }
+  #hud-top .sub { display: none; }
+  #panel { bottom: 138px; }
+  #ctrl { padding: 8px 12px 10px; }
+  #ctrl .row { gap: 10px; }
+  label.lbl, .keys { display: none; }
+  #wave { height: 22px; }
+}
+
+/* Respect a viewer who asked for less motion: the film tones its glitch and
+   chroma work down, and the UI stops animating entirely. */
+@media (prefers-reduced-motion: reduce) {
+  #start-hint .ring { animation: none; }
+  #toast-host .toast { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}
